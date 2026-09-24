@@ -1,1 +1,4 @@
-"nul" 
+bin/
+obj/
+.vs/
+*.user
