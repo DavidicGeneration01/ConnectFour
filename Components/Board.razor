@@ -1,0 +1,207 @@
+@using System.Drawing
+@inject GameState State
+
+<HeadContent>
+    <style>
+        :root {
+            --board-bg: @ColorTranslator.ToHtml(BoardColor);
+            --player1: @ColorTranslator.ToHtml(Player1Color);
+            --player2: @ColorTranslator.ToHtml(Player2Color);
+        }
+    </style>
+</HeadContent>
+
+<div class="game-shell">
+    <div class="mode-row">
+        <button type="button" class="mode-button @(gameMode == GameMode.SinglePlayer ? "selected" : string.Empty)" @onclick="() => SetMode(GameMode.SinglePlayer)">1 Player</button>
+        <button type="button" class="mode-button @(gameMode == GameMode.TwoPlayers ? "selected" : string.Empty)" @onclick="() => SetMode(GameMode.TwoPlayers)">2 Players</button>
+    </div>
+
+    <div class="drop-row">
+        @for (var col = 0; col < 7; col++)
+        {
+            var column = col;
+            <button type="button" class="drop-button" title="Play in column @(column + 1)" disabled="@(IsColumnFull(column) || IsGameOver || isComputerThinking)" @onclick="() => PlayPiece(column)">▼</button>
+        }
+    </div>
+
+    <div class="status-row">
+        <span class="status-text">@StatusText</span>
+        <button type="button" class="reset-button" title="Reset game" @onclick="ResetGame">Reset the game</button>
+    </div>
+
+    <div class="board-panel" aria-label="Connect Four board">
+        @for (var row = 0; row < 6; row++)
+        {
+            @for (var col = 0; col < 7; col++)
+            {
+                var index = row * 7 + col;
+                var value = State.TheBoard[index];
+
+                <div class="cell">
+                    <div class="hole"></div>
+                    @if (value != 0)
+                    {
+                        <div class="disc @(value == 1 ? "player1" : "player2")"></div>
+                    }
+                </div>
+            }
+        }
+    </div>
+</div>
+
+@code {
+    private enum GameMode
+    {
+        SinglePlayer,
+        TwoPlayers
+    }
+
+    [Parameter]
+    public Color BoardColor { get; set; } = ColorTranslator.FromHtml("yellow");
+
+    [Parameter]
+    public Color Player1Color { get; set; } = ColorTranslator.FromHtml("red");
+
+    [Parameter]
+    public Color Player2Color { get; set; } = ColorTranslator.FromHtml("blue");
+
+    private GameMode gameMode = GameMode.TwoPlayers;
+    private string errorMessage = string.Empty;
+    private bool isComputerThinking;
+
+    private bool IsGameOver => State.CheckForWin() != GameState.WinState.No_Winner;
+
+    private string StatusText
+    {
+        get
+        {
+            var outcome = State.CheckForWin();
+
+            if (outcome == GameState.WinState.Player1_Wins)
+            {
+                return "Player 1 wins!";
+            }
+
+            if (outcome == GameState.WinState.Player2_Wins)
+            {
+                return gameMode == GameMode.SinglePlayer ? "Computer wins!" : "Player 2 wins!";
+            }
+
+            if (outcome == GameState.WinState.Tie)
+            {
+                return "It's a draw!";
+            }
+
+            if (gameMode == GameMode.SinglePlayer && State.PlayerTurn == 2)
+            {
+                return isComputerThinking ? "Computer is thinking..." : "Computer's turn";
+            }
+
+            return string.IsNullOrWhiteSpace(errorMessage)
+                ? $"Player {State.PlayerTurn}'s Turn"
+                : $"{errorMessage} Player {State.PlayerTurn}'s Turn";
+        }
+    }
+
+    protected override void OnInitialized()
+    {
+        ResetGame();
+    }
+
+    private void SetMode(GameMode selectedMode)
+    {
+        if (gameMode == selectedMode)
+        {
+            return;
+        }
+
+        gameMode = selectedMode;
+        ResetGame();
+    }
+
+    private bool IsColumnFull(int column)
+    {
+        if (column < 0 || column > 6)
+        {
+            return true;
+        }
+
+        for (var row = 0; row < 6; row++)
+        {
+            if (State.TheBoard[row * 7 + column] == 0)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private async Task PlayPiece(int column)
+    {
+        if (column < 0 || column > 6 || IsGameOver || isComputerThinking)
+        {
+            return;
+        }
+
+        if (IsColumnFull(column))
+        {
+            errorMessage = "Column is full";
+            return;
+        }
+
+        errorMessage = string.Empty;
+
+        try
+        {
+            State.PlayPiece(column);
+
+            if (State.CheckForWin() != GameState.WinState.No_Winner)
+            {
+                return;
+            }
+
+            if (gameMode == GameMode.SinglePlayer && State.PlayerTurn == 2)
+            {
+                isComputerThinking = true;
+                StateHasChanged();
+                await Task.Delay(350);
+
+                var computerColumn = GetComputerMove();
+                if (computerColumn != null)
+                {
+                    State.PlayPiece(computerColumn.Value);
+                }
+
+                isComputerThinking = false;
+            }
+        }
+        catch (ArgumentException)
+        {
+            errorMessage = "Column is full";
+        }
+    }
+
+    private int? GetComputerMove()
+    {
+        var preferredColumns = new[] { 3, 2, 4, 1, 5, 0, 6 };
+
+        foreach (var preferredColumn in preferredColumns)
+        {
+            if (!IsColumnFull(preferredColumn))
+            {
+                return preferredColumn;
+            }
+        }
+
+        return null;
+    }
+
+    private void ResetGame()
+    {
+        State.ResetBoard();
+        errorMessage = string.Empty;
+        isComputerThinking = false;
+    }
+}
